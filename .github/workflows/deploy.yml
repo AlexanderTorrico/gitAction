@@ -1,0 +1,61 @@
+name: Deploy Frontend to LXC
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  BASTION_HOST: ${{ secrets.BASTION_HOST }}
+  BASTION_PORT: ${{ secrets.BASTION_PORT }}
+  BASTION_USER: ${{ secrets.BASTION_USER }}
+
+  INTERNAL_HOST: ${{ secrets.INTERNAL_HOST }}
+  INTERNAL_PORT: ${{ secrets.INTERNAL_PORT }}
+  INTERNAL_USER: ${{ secrets.INTERNAL_USER }}
+
+  # /var/www/html/pruebas/
+  REMOTE_PATH: ${{ secrets.REMOTE_PATH }}
+  LOCAL_TUNNEL_PORT: 2022
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Build React app
+        env:
+          CI: false
+        run: npm run build
+
+      - name: Abrir túnel SSH al contenedor vía bastion
+        env:
+          SSHPASS: ${{ secrets.BASTION_PASSWORD }}
+        run: |
+          sshpass -e ssh -fN \
+            -p "$BASTION_PORT" \
+            -L "$LOCAL_TUNNEL_PORT:$INTERNAL_HOST:$INTERNAL_PORT" \
+            -o StrictHostKeyChecking=accept-new \
+            -o ExitOnForwardFailure=yes \
+            -o ServerAliveInterval=30 \
+            "$BASTION_USER@$BASTION_HOST"
+
+          timeout 10 bash -c "until nc -z localhost $LOCAL_TUNNEL_PORT; do sleep 0.2; done"
+
+      - name: Copiar build/ al servidor (rsync vía túnel)
+        env:
+          SSHPASS: ${{ secrets.INTERNAL_PASSWORD }}
+        run: |
+          sshpass -e rsync -avz --delete \
+            -e "ssh -p $LOCAL_TUNNEL_PORT -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null" \
+            ./build/ "$INTERNAL_USER@localhost:$REMOTE_PATH"
