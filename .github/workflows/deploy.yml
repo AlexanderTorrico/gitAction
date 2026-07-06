@@ -58,4 +58,4 @@ jobs:
         run: |
           sshpass -e rsync -avz --delete \
             -e "ssh -p $LOCAL_TUNNEL_PORT -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null" \
-            ./build/ "$INTERNAL_USER@localhost:$REMOTE_PATH"
+            ./dist/ "$INTERNAL_USER@localhost:$REMOTE_PATH"
